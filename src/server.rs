@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose};
 use std::io::Cursor;
 use image::ImageFormat;
-use windows::Win32::UI::Accessibility::*;
 
 use crate::capture::CaptureEngine;
 use crate::uia::UIAutomationBridge;
@@ -48,17 +47,33 @@ impl ServerHandler for UltraWinHandler {
                     "tools": [
                         {
                             "name": "screenshot",
-                            "description": "Capture the screen",
+                            "description": "Capture a zero-latency screenshot using DXGI",
                             "inputSchema": { "type": "object", "properties": {} }
                         },
                         {
                             "name": "get_ui_tree",
-                            "description": "Retrieve the accessibility tree",
+                            "description": "Retrieve the accessibility tree (recursive)",
                             "inputSchema": { "type": "object", "properties": {} }
                         },
                         {
+                            "name": "get_focused_element",
+                            "description": "Get properties of the currently focused UI element",
+                            "inputSchema": { "type": "object", "properties": {} }
+                        },
+                        {
+                            "name": "find_element",
+                            "description": "Find an element by name or ID and return its bounding box",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "query": { "type": "string", "description": "Name or Automation ID" }
+                                },
+                                "required": ["query"]
+                            }
+                        },
+                        {
                             "name": "click",
-                            "description": "Click at specific coordinates",
+                            "description": "Click at specific screen coordinates",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
@@ -68,6 +83,22 @@ impl ServerHandler for UltraWinHandler {
                                 },
                                 "required": ["x", "y"]
                             }
+                        },
+                        {
+                            "name": "type_text",
+                            "description": "Type text into the focused element",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string" }
+                                },
+                                "required": ["text"]
+                            }
+                        },
+                        {
+                            "name": "read_text",
+                            "description": "Perform hardware-accelerated OCR on the current screen",
+                            "inputSchema": { "type": "object", "properties": {} }
                         }
                     ]
                 }))
@@ -82,13 +113,10 @@ impl ServerHandler for UltraWinHandler {
                     "screenshot" => {
                         let engine = self.capture_engine.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "Capture engine not available"))?;
                         let frame = engine.capture_frame().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Capture failed: {}", e)))?;
-                        
                         let mut buffer = Vec::new();
                         frame.write_to(&mut Cursor::new(&mut buffer), ImageFormat::Png)
                             .map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Encoding failed: {}", e)))?;
-                        
                         let b64 = general_purpose::STANDARD.encode(buffer);
-                        
                         Ok(json!({
                             "content": [
                                 { "type": "text", "text": "Screenshot captured successfully." },
@@ -100,31 +128,41 @@ impl ServerHandler for UltraWinHandler {
                         let x = arguments.get("x").and_then(|v| v.as_i64()).ok_or_else(|| Error::protocol(ErrorCode::InvalidParams, "Missing x"))? as i32;
                         let y = arguments.get("y").and_then(|v| v.as_i64()).ok_or_else(|| Error::protocol(ErrorCode::InvalidParams, "Missing y"))? as i32;
                         let button = arguments.get("button").and_then(|v| v.as_str()).unwrap_or("left");
-
                         self.input_manager.mouse_click(x, y, button).map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Click failed: {}", e)))?;
-
-                        Ok(json!({
-                            "content": [{ "type": "text", "text": format!("Clicked {} at ({}, {})", button, x, y) }]
-                        }))
+                        Ok(json!({ "content": [{ "type": "text", "text": format!("Clicked {} at ({}, {})", button, x, y) }] }))
+                    }
+                    "type_text" => {
+                        let text = arguments.get("text").and_then(|v| v.as_str()).ok_or_else(|| Error::protocol(ErrorCode::InvalidParams, "Missing text"))?;
+                        self.input_manager.type_text(text).map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Typing failed: {}", e)))?;
+                        Ok(json!({ "content": [{ "type": "text", "text": format!("Typed: {}", text) }] }))
                     }
                     "get_ui_tree" => {
                         let uia = self.uia_bridge.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "UIA bridge not available"))?;
                         let root = uia.get_root().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Failed to get root: {}", e)))?;
-                        
-                        let mut elements = Vec::new();
-                        unsafe {
-                            let name = root.CurrentName().unwrap_or_default().to_string();
-                            let automation_id = root.CurrentAutomationId().unwrap_or_default().to_string();
-                            elements.push(json!({
-                                "name": name,
-                                "automation_id": automation_id,
-                                "type": "Root"
-                            }));
+                        let tree = uia.traverse_tree(&root, 0);
+                        Ok(json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(&tree).unwrap_or_default() }] }))
+                    }
+                    "get_focused_element" => {
+                        let uia = self.uia_bridge.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "UIA bridge not available"))?;
+                        let element = uia.get_focused_element().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Failed to get focused element: {}", e)))?;
+                        let props = uia.traverse_tree(&element, 5);
+                        Ok(json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(&props).unwrap_or_default() }] }))
+                    }
+                    "find_element" => {
+                        let query = arguments.get("query").and_then(|v| v.as_str()).ok_or_else(|| Error::protocol(ErrorCode::InvalidParams, "Missing query"))?;
+                        let uia = self.uia_bridge.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "UIA bridge not available"))?;
+                        let rect = uia.find_element(query).map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Search failed: {}", e)))?;
+                        match rect {
+                            Some(r) => Ok(json!({ "content": [{ "type": "text", "text": format!("Found at {{ left: {}, top: {}, right: {}, bottom: {} }}", r.left, r.top, r.right, r.bottom) }] })),
+                            None => Ok(json!({ "content": [{ "type": "text", "text": "Element not found" }] })),
                         }
-
-                        Ok(json!({
-                            "content": [{ "type": "text", "text": format!("UI Tree Root: {:?}", elements) }]
-                        }))
+                    }
+                    "read_text" => {
+                        let vision = self.vision_engine.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "Vision engine not available"))?;
+                        let engine = self.capture_engine.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "Capture engine not available"))?;
+                        let frame = engine.capture_frame().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Capture failed: {}", e)))?;
+                        let words = vision.recognize_text(&frame).map_err(|e| Error::protocol(ErrorCode::InternalError, format!("OCR failed: {}", e)))?;
+                        Ok(json!({ "content": [{ "type": "text", "text": format!("Detected words: {:?}", words) }] }))
                     }
                     _ => Err(Error::protocol(ErrorCode::MethodNotFound, format!("Unknown tool: {}", name))),
                 }

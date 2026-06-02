@@ -135,3 +135,30 @@ impl InputManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_screen_metrics() {
+        let manager = InputManager::new();
+        let (w, h) = manager.get_screen_metrics();
+        println!("Screen metrics: {}x{}", w, h);
+        // In CI, metrics might be 0 or some default value, but shouldnt crash
+    }
+
+    #[test]
+    fn test_input_generation() {
+        let manager = InputManager::new();
+        let result = manager.mouse_move(100, 100);
+        assert!(result.is_ok());
+    }
+}
+
+    #[test]
+    fn test_type_text_init() {
+        let manager = InputManager::new();
+        let result = manager.type_text("Hello");
+        assert!(result.is_ok());
+    }

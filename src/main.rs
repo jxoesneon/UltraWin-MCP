@@ -1,12 +1,7 @@
-mod capture;
-mod uia;
-mod server;
-mod input;
-mod vision;
-
-use capture::CaptureEngine;
-use uia::UIAutomationBridge;
-use vision::VisionEngine;
+use ultrawin_mcp::capture::CaptureEngine;
+use ultrawin_mcp::uia::UIAutomationBridge;
+use ultrawin_mcp::vision::VisionEngine;
+use ultrawin_mcp::server;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 use std::sync::Arc;

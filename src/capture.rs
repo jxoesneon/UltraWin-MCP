@@ -131,3 +131,18 @@ impl CaptureEngine {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_capture_engine_init() {
+        // Initialization might fail if no display is attached (e.g., CI)
+        let engine = CaptureEngine::new(0);
+        match engine {
+            Ok(_) => println!("CaptureEngine initialized successfully"),
+            Err(e) => println!("CaptureEngine initialization failed (expected in some environments): {:?}", e),
+        }
+    }
+}
