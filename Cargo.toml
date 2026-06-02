@@ -1,0 +1,43 @@
+[package]
+name = "ultrawin-mcp"
+version = "1.0.0"
+edition = "2024"
+authors = ["jxoesneon"]
+description = "State-of-the-art Unified Rust MCP server for Windows 10+ automation and vision."
+
+[dependencies]
+# Core Runtime & Protocol
+tokio = { version = "1.43", features = ["full"] }
+mcp-sdk-rs = "0.3.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Windows Native APIs (Cutting Edge)
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Direct3D11",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading"
+] }
+
+# Visual Intelligence (ONNX + DirectML)
+ort = { version = "2.0.0-rc.9", features = ["directml"] }
+
+# Utilities
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+thiserror = "2.0"
+image = "0.25"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = 'abort'
+strip = true
