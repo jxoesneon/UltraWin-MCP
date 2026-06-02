@@ -16,6 +16,9 @@ serde_json = "1.0"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",
     "Win32_UI_Accessibility",
     "Win32_UI_Input_KeyboardAndMouse",
@@ -34,6 +37,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
 thiserror = "2.0"
 image = "0.25"
+base64 = "0.22"
+async-trait = "0.1.89"
 
 [profile.release]
 opt-level = 3
