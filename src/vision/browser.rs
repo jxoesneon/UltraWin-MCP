@@ -72,4 +72,3 @@ pub async fn ensure_browser_ready() -> Result<()> {
         "Browser launched but port 9222 is not responding after 5 seconds"
     ))
 }
-

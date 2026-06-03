@@ -65,14 +65,14 @@ impl BrowserProvider for CdpBridge {
                 let res: Value = serde_json::from_str(&text)?;
                 if res["id"] == 2 && res["result"]["nodeId"].as_i64().is_some() {
                     let node_id = res["result"]["nodeId"].as_i64().unwrap();
-                        let box_req = json!({
-                            "id": 3,
-                            "method": "DOM.getBoxModel",
-                            "params": { "nodeId": node_id }
-                        });
-                        ws_stream
-                            .send(Message::Text(box_req.to_string().into()))
-                            .await?;
+                    let box_req = json!({
+                        "id": 3,
+                        "method": "DOM.getBoxModel",
+                        "params": { "nodeId": node_id }
+                    });
+                    ws_stream
+                        .send(Message::Text(box_req.to_string().into()))
+                        .await?;
                 }
                 if res["id"] == 3 {
                     return Ok(res["result"]["model"].clone());
@@ -83,4 +83,3 @@ impl BrowserProvider for CdpBridge {
         Err(anyhow!("CDP Query failed or timed out"))
     }
 }
-
