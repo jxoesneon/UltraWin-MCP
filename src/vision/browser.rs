@@ -26,7 +26,7 @@ pub async fn ensure_browser_ready() -> Result<()> {
     let mut launched = false;
     for path in paths {
         match Command::new(path)
-            .args(&["--remote-debugging-port=9222", "--headless"])
+            .args(["--remote-debugging-port=9222", "--headless"])
             .spawn()
         {
             Ok(_) => {
@@ -41,7 +41,7 @@ pub async fn ensure_browser_ready() -> Result<()> {
     if !launched {
         // Fallback: try using 'start' via cmd which might find it via registry
         match Command::new("cmd")
-            .args(&[
+            .args([
                 "/C",
                 "start chrome.exe --remote-debugging-port=9222 --headless",
             ])
@@ -72,3 +72,4 @@ pub async fn ensure_browser_ready() -> Result<()> {
         "Browser launched but port 9222 is not responding after 5 seconds"
     ))
 }
+

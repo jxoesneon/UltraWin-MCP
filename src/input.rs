@@ -5,6 +5,12 @@ use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_
 
 pub struct InputManager {}
 
+impl Default for InputManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InputManager {
     pub fn new() -> Self {
         Self {}
@@ -107,3 +113,4 @@ mod tests {
         assert_eq!(keys.len(), 2);
     }
 }
+

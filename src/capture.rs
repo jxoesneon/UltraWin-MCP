@@ -1,24 +1,25 @@
-use crate::traits::CaptureProvider;
 use anyhow::{Context, Result, anyhow};
 use image::{DynamicImage, ImageBuffer, Rgba};
-use std::sync::Mutex;
-use tracing::warn;
+use windows::core::Interface;
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_1};
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_CREATE_DEVICE_FLAG, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION,
-    D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, D3D11CreateDevice, ID3D11Device,
-    ID3D11DeviceContext, ID3D11Texture2D,
+    D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
+    D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_CREATE_DEVICE_FLAG,
+    D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO, IDXGIAdapter1,
-    IDXGIFactory1, IDXGIOutput, IDXGIOutput1, IDXGIOutputDuplication,
+    CreateDXGIFactory1, IDXGIFactory1, IDXGIAdapter1, IDXGIOutput, IDXGIOutput1,
+    IDXGIOutputDuplication, DXGI_OUTDUPL_FRAME_INFO,
+    DXGI_ERROR_WAIT_TIMEOUT,
 };
 use windows::Win32::Graphics::Gdi::{
-    BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
-    DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC, SRCCOPY, SelectObject,
+    GetDC, ReleaseDC, CreateCompatibleDC, CreateCompatibleBitmap, SelectObject, BitBlt, DeleteDC, DeleteObject,
+    BITMAPINFO, BITMAPINFOHEADER, GetDIBits, DIB_RGB_COLORS, SRCCOPY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
-use windows::core::Interface;
+use std::sync::Mutex;
+use tracing::warn;
+use crate::traits::CaptureProvider;
 
 pub struct CaptureEngine {
     display_index: usize,
@@ -58,9 +59,7 @@ impl CaptureEngine {
 
     fn ensure_initialized(&self) -> Result<()> {
         let mut state_guard = self.state.lock().unwrap();
-        if state_guard.is_some() {
-            return Ok(());
-        }
+        if state_guard.is_some() { return Ok(()); }
 
         unsafe {
             let mut device: Option<ID3D11Device> = None;
@@ -68,70 +67,42 @@ impl CaptureEngine {
             let mut feature_level = D3D_FEATURE_LEVEL_11_1;
 
             D3D11CreateDevice(
-                None,
-                D3D_DRIVER_TYPE_HARDWARE,
-                None,
-                D3D11_CREATE_DEVICE_FLAG(0),
-                Some(&[D3D_FEATURE_LEVEL_11_1]),
-                D3D11_SDK_VERSION,
-                Some(&mut device),
-                Some(&mut feature_level),
-                Some(&mut context),
-            )
-            .context("Failed to create D3D11 device")?;
+                None, D3D_DRIVER_TYPE_HARDWARE, None, D3D11_CREATE_DEVICE_FLAG(0),
+                Some(&[D3D_FEATURE_LEVEL_11_1]), D3D11_SDK_VERSION,
+                Some(&mut device), Some(&mut feature_level), Some(&mut context),
+            ).context("Failed to create D3D11 device")?;
 
             let device = device.unwrap();
             let context = context.unwrap();
-            let factory: IDXGIFactory1 =
-                CreateDXGIFactory1().context("Failed to create DXGI Factory")?;
-            let adapter: IDXGIAdapter1 =
-                factory.EnumAdapters1(0).context("Failed to enum adapter")?;
-            let output: IDXGIOutput = adapter
-                .EnumOutputs(self.display_index as u32)
-                .context("Failed to enum output")?;
-            let output1: IDXGIOutput1 = output
-                .cast()
-                .context("Failed to cast output to IDXGIOutput1")?;
-            let duplication = output1
-                .DuplicateOutput(&device)
-                .context("Failed to duplicate output")?;
+            let factory: IDXGIFactory1 = CreateDXGIFactory1().context("Failed to create DXGI Factory")?;
+            let adapter: IDXGIAdapter1 = factory.EnumAdapters1(0).context("Failed to enum adapter")?;
+            let output: IDXGIOutput = adapter.EnumOutputs(self.display_index as u32).context("Failed to enum output")?;
+            let output1: IDXGIOutput1 = output.cast().context("Failed to cast output to IDXGIOutput1")?;
+            let duplication = output1.DuplicateOutput(&device).context("Failed to duplicate output")?;
 
-            *state_guard = Some(CaptureState {
-                device,
-                context,
-                duplication,
-            });
+            *state_guard = Some(CaptureState { device, context, duplication });
             Ok(())
         }
     }
 
     fn capture_frame_dxgi(&self) -> Result<DynamicImage> {
         self.ensure_initialized()?;
-
+        
         let state_guard = self.state.lock().unwrap();
-        let state = state_guard
-            .as_ref()
-            .ok_or_else(|| anyhow!("Capture state not initialized"))?;
+        let state = state_guard.as_ref().ok_or_else(|| anyhow!("Capture state not initialized"))?;
 
         unsafe {
             let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
             let mut resource: Option<windows::Win32::Graphics::Dxgi::IDXGIResource> = None;
 
-            state
-                .duplication
-                .AcquireNextFrame(100, &mut frame_info, &mut resource)
+            state.duplication.AcquireNextFrame(100, &mut frame_info, &mut resource)
                 .map_err(|e| {
-                    if e.code() == DXGI_ERROR_WAIT_TIMEOUT {
-                        anyhow!("Timeout waiting for frame")
-                    } else {
-                        anyhow!("Failed to acquire next frame: {:?}", e)
-                    }
+                    if e.code() == DXGI_ERROR_WAIT_TIMEOUT { anyhow!("Timeout waiting for frame") }
+                    else { anyhow!("Failed to acquire next frame: {:?}", e) }
                 })?;
 
             let resource = resource.context("AcquireNextFrame returned null resource")?;
-            let texture: ID3D11Texture2D = resource
-                .cast()
-                .context("Failed to cast resource to ID3D11Texture2D")?;
+            let texture: ID3D11Texture2D = resource.cast().context("Failed to cast resource to ID3D11Texture2D")?;
 
             let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
             texture.GetDesc(&mut texture_desc);
@@ -143,20 +114,15 @@ impl CaptureEngine {
             staging_desc.MiscFlags = 0;
 
             let mut staging_texture: Option<ID3D11Texture2D> = None;
-            state
-                .device
-                .CreateTexture2D(&staging_desc, None, Some(&mut staging_texture))
+            state.device.CreateTexture2D(&staging_desc, None, Some(&mut staging_texture))
                 .context("Failed to create staging texture")?;
             let staging_texture = staging_texture.unwrap();
 
             state.context.CopyResource(&staging_texture, &texture);
 
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            let map_res =
-                state
-                    .context
-                    .Map(&staging_texture, 0, D3D11_MAP_READ, 0, Some(&mut mapped));
-
+            let map_res = state.context.Map(&staging_texture, 0, D3D11_MAP_READ, 0, Some(&mut mapped));
+            
             if map_res.is_err() {
                 let _ = state.duplication.ReleaseFrame();
                 return Err(anyhow!("Failed to map staging texture"));
@@ -165,7 +131,8 @@ impl CaptureEngine {
             let width = texture_desc.Width;
             let height = texture_desc.Height;
             let pitch = mapped.RowPitch as usize;
-
+            
+            // Call the unsafe function since we are in an unsafe block
             let img = convert_bgra_to_rgba(mapped.pData as *const u8, width, height, pitch)?;
 
             state.context.Unmap(&staging_texture, 0);
@@ -183,7 +150,7 @@ impl CaptureEngine {
             let h_dc_screen = GetDC(None);
             let h_dc_mem = CreateCompatibleDC(h_dc_screen);
             let h_bitmap = CreateCompatibleBitmap(h_dc_screen, width, height);
-
+            
             let old_obj = SelectObject(h_dc_mem, h_bitmap);
             BitBlt(h_dc_mem, 0, 0, width, height, h_dc_screen, 0, 0, SRCCOPY)?;
 
@@ -201,15 +168,7 @@ impl CaptureEngine {
             };
 
             let mut buffer = vec![0u8; (width * height * 4) as usize];
-            GetDIBits(
-                h_dc_screen,
-                h_bitmap,
-                0,
-                height as u32,
-                Some(buffer.as_mut_ptr() as *mut _),
-                &mut bmi,
-                DIB_RGB_COLORS,
-            );
+            GetDIBits(h_dc_screen, h_bitmap, 0, height as u32, Some(buffer.as_mut_ptr() as *mut _), &mut bmi, DIB_RGB_COLORS);
 
             let img = process_gdi_buffer(buffer, width as u32, height as u32)?;
 
@@ -223,33 +182,34 @@ impl CaptureEngine {
     }
 }
 
-pub fn convert_bgra_to_rgba(
+/// # Safety
+/// `data_ptr` must point to a valid BGRA buffer of at least `pitch * height` bytes.
+#[allow(unsafe_op_in_unsafe_fn)]
+pub unsafe fn convert_bgra_to_rgba(
     data_ptr: *const u8,
     width: u32,
     height: u32,
     pitch: usize,
 ) -> Result<DynamicImage> {
-    unsafe {
-        let data = std::slice::from_raw_parts(data_ptr, pitch * height as usize);
-        let mut rgba_data = Vec::with_capacity((width * height * 4) as usize);
-        for y in 0..height {
-            let row_start = (y as usize) * pitch;
-            let row_end = row_start + (width as usize * 4);
-            if row_end > data.len() {
-                return Err(anyhow!("Row pitch out of bounds"));
-            }
-            let row = &data[row_start..row_end];
-            for chunk in row.chunks_exact(4) {
-                rgba_data.push(chunk[2]);
-                rgba_data.push(chunk[1]);
-                rgba_data.push(chunk[0]);
-                rgba_data.push(chunk[3]);
-            }
+    let data = std::slice::from_raw_parts(data_ptr, pitch * height as usize);
+    let mut rgba_data = Vec::with_capacity((width * height * 4) as usize);
+    for y in 0..height {
+        let row_start = (y as usize) * pitch;
+        let row_end = row_start + (width as usize * 4);
+        if row_end > data.len() {
+            return Err(anyhow!("Row pitch out of bounds"));
         }
-        let img = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba_data)
-            .context("Failed to create image buffer")?;
-        Ok(DynamicImage::ImageRgba8(img))
+        let row = &data[row_start..row_end];
+        for chunk in row.chunks_exact(4) {
+            rgba_data.push(chunk[2]);
+            rgba_data.push(chunk[1]);
+            rgba_data.push(chunk[0]);
+            rgba_data.push(chunk[3]);
+        }
     }
+    let img = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba_data)
+        .context("Failed to create image buffer")?;
+    Ok(DynamicImage::ImageRgba8(img))
 }
 
 pub fn process_gdi_buffer(mut buffer: Vec<u8>, width: u32, height: u32) -> Result<DynamicImage> {
