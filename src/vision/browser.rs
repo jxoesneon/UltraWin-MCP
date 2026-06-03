@@ -1,14 +1,12 @@
-
-
+use anyhow::Result;
 use std::process::Command;
 use std::time::Duration;
 use tokio::time::sleep;
-use anyhow::Result;
 use tracing::{info, warn};
 
 pub async fn ensure_browser_ready() -> Result<()> {
     let url = "http://127.0.0.1:9222/json/version";
-    
+
     // Check if already running
     if reqwest::get(url).await.is_ok() {
         return Ok(());
@@ -29,7 +27,8 @@ pub async fn ensure_browser_ready() -> Result<()> {
     for path in paths {
         match Command::new(path)
             .args(&["--remote-debugging-port=9222", "--headless"])
-            .spawn() {
+            .spawn()
+        {
             Ok(_) => {
                 info!("Launched browser from: {}", path);
                 launched = true;
@@ -42,13 +41,19 @@ pub async fn ensure_browser_ready() -> Result<()> {
     if !launched {
         // Fallback: try using 'start' via cmd which might find it via registry
         match Command::new("cmd")
-            .args(&["/C", "start chrome.exe --remote-debugging-port=9222 --headless"])
-            .spawn() {
+            .args(&[
+                "/C",
+                "start chrome.exe --remote-debugging-port=9222 --headless",
+            ])
+            .spawn()
+        {
             Ok(_) => {
                 info!("Attempted launch via 'start chrome.exe'");
             }
             Err(_) => {
-                warn!("Failed to launch browser automatically. Please ensure a browser is running with --remote-debugging-port=9222");
+                warn!(
+                    "Failed to launch browser automatically. Please ensure a browser is running with --remote-debugging-port=9222"
+                );
                 return Err(anyhow::anyhow!("Could not launch browser"));
             }
         }
@@ -63,12 +68,7 @@ pub async fn ensure_browser_ready() -> Result<()> {
         }
     }
 
-    Err(anyhow::anyhow!("Browser launched but port 9222 is not responding after 5 seconds"))
+    Err(anyhow::anyhow!(
+        "Browser launched but port 9222 is not responding after 5 seconds"
+    ))
 }
-
-
-
-
-
-
-

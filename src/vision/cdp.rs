@@ -1,11 +1,11 @@
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use futures_util::{StreamExt, SinkExt};
-use serde_json::{json, Value};
-use anyhow::{Result, anyhow};
-use tracing::{debug};
-use async_trait::async_trait;
 use crate::traits::BrowserProvider;
 use crate::vision::browser;
+use anyhow::{Result, anyhow};
+use async_trait::async_trait;
+use futures_util::{SinkExt, StreamExt};
+use serde_json::{Value, json};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tracing::debug;
 
 pub struct CdpBridge {
     host: String,
@@ -23,17 +23,16 @@ impl CdpBridge {
 
 #[async_trait]
 impl BrowserProvider for CdpBridge {
-    
     async fn ensure_ready(&self) -> Result<()> {
         browser::ensure_browser_ready().await
     }
 
-    
     async fn query_selector(&self, selector: &str) -> Result<Value> {
         let version_url = format!("http://{}:{}/json/version", self.host, self.port);
         let resp = reqwest::get(&version_url).await?;
         let info: Value = resp.json().await?;
-        let ws_url = info["webSocketDebuggerUrl"].as_str()
+        let ws_url = info["webSocketDebuggerUrl"]
+            .as_str()
             .ok_or_else(|| anyhow!("No webSocketDebuggerUrl found"))?;
 
         let (mut ws_stream, _) = connect_async(ws_url).await?;
@@ -44,7 +43,9 @@ impl BrowserProvider for CdpBridge {
             "method": "DOM.getDocument",
             "params": { "depth": -1 }
         });
-        ws_stream.send(Message::Text(doc_req.to_string().into())).await?;
+        ws_stream
+            .send(Message::Text(doc_req.to_string().into()))
+            .await?;
 
         let query_req = json!({
             "id": 2,
@@ -54,8 +55,10 @@ impl BrowserProvider for CdpBridge {
                 "selector": selector
             }
         });
-        ws_stream.send(Message::Text(query_req.to_string().into())).await?;
-        
+        ws_stream
+            .send(Message::Text(query_req.to_string().into()))
+            .await?;
+
         while let Some(msg) = ws_stream.next().await {
             let msg = msg?;
             if let Message::Text(text) = msg {
@@ -67,7 +70,9 @@ impl BrowserProvider for CdpBridge {
                             "method": "DOM.getBoxModel",
                             "params": { "nodeId": node_id }
                         });
-                        ws_stream.send(Message::Text(box_req.to_string().into())).await?;
+                        ws_stream
+                            .send(Message::Text(box_req.to_string().into()))
+                            .await?;
                     }
                 }
                 if res["id"] == 3 {
@@ -79,9 +84,3 @@ impl BrowserProvider for CdpBridge {
         Err(anyhow!("CDP Query failed or timed out"))
     }
 }
-
-
-
-
-
-

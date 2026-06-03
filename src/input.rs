@@ -1,16 +1,17 @@
+use crate::traits::InputProvider;
+use anyhow::Result;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
-use anyhow::Result;
-use crate::traits::InputProvider;
 
 pub struct InputManager {}
 
 impl InputManager {
-    pub fn new() -> Self { Self {} }
+    pub fn new() -> Self {
+        Self {}
+    }
 }
 
 impl InputProvider for InputManager {
-    
     fn mouse_click(&self, x: i32, y: i32, button: &str) -> Result<()> {
         unsafe {
             let width = GetSystemMetrics(SM_CXSCREEN);
@@ -21,7 +22,6 @@ impl InputProvider for InputManager {
         }
     }
 
-    
     fn type_text(&self, text: &str) -> Result<()> {
         unsafe {
             for c in text.chars() {
@@ -33,12 +33,18 @@ impl InputProvider for InputManager {
     }
 }
 
-pub fn generate_mouse_click_inputs(x: i32, y: i32, button: &str, width: i32, height: i32) -> [INPUT; 3] {
+pub fn generate_mouse_click_inputs(
+    x: i32,
+    y: i32,
+    button: &str,
+    width: i32,
+    height: i32,
+) -> [INPUT; 3] {
     let normalized_x = if width > 0 { (x * 65535) / width } else { 0 };
     let normalized_y = if height > 0 { (y * 65535) / height } else { 0 };
 
     let mut inputs = [INPUT::default(); 3];
-    
+
     inputs[0].r#type = INPUT_MOUSE;
     inputs[0].Anonymous.mi = MOUSEINPUT {
         dx: normalized_x,
@@ -70,7 +76,7 @@ pub fn generate_mouse_click_inputs(x: i32, y: i32, button: &str, width: i32, hei
 
 pub fn generate_key_inputs(c: char) -> [INPUT; 2] {
     let mut inputs = [INPUT::default(); 2];
-    
+
     inputs[0].r#type = INPUT_KEYBOARD;
     inputs[0].Anonymous.ki = KEYBDINPUT {
         wScan: c as u16,
@@ -96,14 +102,8 @@ mod tests {
     fn test_input_logic() {
         let inputs = generate_mouse_click_inputs(10, 10, "left", 100, 100);
         assert_eq!(inputs.len(), 3);
-        
+
         let keys = generate_key_inputs('a');
         assert_eq!(keys.len(), 2);
     }
 }
-
-
-
-
-
-

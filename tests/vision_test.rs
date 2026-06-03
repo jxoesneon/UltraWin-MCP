@@ -6,4 +6,3 @@ async fn test_vision_engine_init() {
     let engine = VisionEngine::new(None).await;
     assert!(engine.is_ok(), "VisionEngine should initialize via WinRT");
 }
-

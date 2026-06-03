@@ -1,8 +1,8 @@
-use async_trait::async_trait;
+use crate::vision::engine::DetectedWord;
 use anyhow::Result;
+use async_trait::async_trait;
 use image::DynamicImage;
 use serde_json::Value;
-use crate::vision::engine::DetectedWord;
 use windows::Win32::Foundation::RECT;
 
 #[async_trait]
@@ -33,4 +33,3 @@ pub trait BrowserProvider: Send + Sync {
     async fn query_selector(&self, selector: &str) -> Result<Value>;
     async fn ensure_ready(&self) -> Result<()>;
 }
-

@@ -1,21 +1,19 @@
-
-
 mod capture;
-mod uia;
-mod server;
 mod input;
-mod vision;
+mod server;
 mod traits;
+mod uia;
+mod vision;
 
 use crate::capture::CaptureEngine;
+use crate::input::InputManager;
+use crate::server::lsp_transport::LspTransport;
 use crate::uia::UIAutomationBridge;
 use crate::vision::VisionEngine;
 use crate::vision::cdp::CdpBridge;
-use crate::input::InputManager;
-use crate::server::lsp_transport::LspTransport;
-use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
 use std::sync::Arc;
+use tracing::{Level, info};
+use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,8 +21,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(Level::INFO)
         .with_writer(std::io::stderr)
         .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("setting default subscriber failed");
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     info!("UltraWin MCP - State-of-the-Art Windows Automation Server");
 
@@ -49,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
             None
         }
     };
-    
+
     let vision_engine = match VisionEngine::new(None).await {
         Ok(engine) => {
             info!("Vision Engine initialized");
@@ -65,15 +62,15 @@ async fn main() -> anyhow::Result<()> {
     let cdp_bridge = Arc::new(CdpBridge::new("127.0.0.1", 9222));
 
     info!("Initializing MCP Server with LSP Transport...");
-    
+
     let transport = Arc::new(LspTransport::new(tokio::io::stdin(), tokio::io::stdout()));
     let server = server::build_server(
-        transport, 
-        capture_engine.map(|e| e as Arc<dyn crate::traits::CaptureProvider>), 
-        uia_bridge.map(|b| Arc::new(b) as Arc<dyn crate::traits::UIAutomationProvider>), 
+        transport,
+        capture_engine.map(|e| e as Arc<dyn crate::traits::CaptureProvider>),
+        uia_bridge.map(|b| Arc::new(b) as Arc<dyn crate::traits::UIAutomationProvider>),
         vision_engine.map(|v| v as Arc<dyn crate::traits::VisionProvider>),
         input_manager as Arc<dyn crate::traits::InputProvider>,
-        cdp_bridge as Arc<dyn crate::traits::BrowserProvider>
+        cdp_bridge as Arc<dyn crate::traits::BrowserProvider>,
     );
 
     info!("UltraWin MCP is ready for commands.");
@@ -82,8 +79,3 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-
-
-
-
