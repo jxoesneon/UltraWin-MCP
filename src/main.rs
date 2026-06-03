@@ -1,17 +1,27 @@
-use ultrawin_mcp::capture::CaptureEngine;
-use ultrawin_mcp::uia::UIAutomationBridge;
-use ultrawin_mcp::vision::VisionEngine;
-use ultrawin_mcp::server;
+
+
+mod capture;
+mod uia;
+mod server;
+mod input;
+mod vision;
+mod traits;
+
+use crate::capture::CaptureEngine;
+use crate::uia::UIAutomationBridge;
+use crate::vision::VisionEngine;
+use crate::vision::cdp::CdpBridge;
+use crate::input::InputManager;
+use crate::server::lsp_transport::LspTransport;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use mcp_sdk_rs::transport::stdio::StdioTransport;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
+        .with_writer(std::io::stderr)
         .finish();
     tracing::subscriber::set_global_default(subscriber)
         .expect("setting default subscriber failed");
@@ -32,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
     let uia_bridge = match UIAutomationBridge::new() {
         Ok(bridge) => {
             info!("UIA3 High-Performance Bridge initialized");
-            Some(Arc::new(bridge))
+            Some(bridge)
         }
         Err(e) => {
             tracing::error!("Failed to initialize UIA3 Bridge: {:?}", e);
@@ -40,9 +50,9 @@ async fn main() -> anyhow::Result<()> {
         }
     };
     
-    let vision_engine = match VisionEngine::new(None) {
+    let vision_engine = match VisionEngine::new(None).await {
         Ok(engine) => {
-            info!("Vision Engine initialized (Placeholder mode)");
+            info!("Vision Engine initialized");
             Some(Arc::new(engine))
         }
         Err(e) => {
@@ -51,13 +61,20 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    info!("Initializing MCP Server...");
+    let input_manager = Arc::new(InputManager::new());
+    let cdp_bridge = Arc::new(CdpBridge::new("127.0.0.1", 9222));
 
-    let (_read_tx, read_rx) = mpsc::channel(100);
-    let (write_tx, mut _write_rx) = mpsc::channel(100);
-
-    let transport = Arc::new(StdioTransport::new(read_rx, write_tx));
-    let server = server::build_server(transport, capture_engine, uia_bridge, vision_engine);
+    info!("Initializing MCP Server with LSP Transport...");
+    
+    let transport = Arc::new(LspTransport::new(tokio::io::stdin(), tokio::io::stdout()));
+    let server = server::build_server(
+        transport, 
+        capture_engine.map(|e| e as Arc<dyn crate::traits::CaptureProvider>), 
+        uia_bridge.map(|b| Arc::new(b) as Arc<dyn crate::traits::UIAutomationProvider>), 
+        vision_engine.map(|v| v as Arc<dyn crate::traits::VisionProvider>),
+        input_manager as Arc<dyn crate::traits::InputProvider>,
+        cdp_bridge as Arc<dyn crate::traits::BrowserProvider>
+    );
 
     info!("UltraWin MCP is ready for commands.");
 
@@ -65,3 +82,8 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+
+
+
+

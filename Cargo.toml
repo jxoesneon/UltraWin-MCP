@@ -1,6 +1,6 @@
 [package]
 name = "ultrawin-mcp"
-version = "1.0.0"
+version = "0.1.0"
 edition = "2024"
 authors = ["jxoesneon"]
 description = "State-of-the-art Unified Rust MCP server for Windows 10+ automation and vision."
@@ -25,7 +25,11 @@ windows = { version = "0.58", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Com",
     "Win32_System_LibraryLoader",
-    "Win32_System_Threading"
+    "Win32_System_Threading",
+    "Media_Ocr",
+    "Graphics_Imaging",
+    "Storage_Streams",
+    "Foundation_Collections"
 ] }
 
 # Visual Intelligence (ONNX + DirectML)
@@ -39,10 +43,13 @@ thiserror = "2.0"
 image = "0.25"
 base64 = "0.22"
 async-trait = "0.1.89"
+tokio-tungstenite = "0.29.0"
+futures-util = "0.3.32"
+reqwest = { version = "0.13.4", features = ["json"] }
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = 'abort'
+panic = "abort"
 strip = true

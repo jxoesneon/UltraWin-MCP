@@ -8,16 +8,16 @@ use base64::{Engine as _, engine::general_purpose};
 use std::io::Cursor;
 use image::ImageFormat;
 
-use crate::capture::CaptureEngine;
-use crate::uia::UIAutomationBridge;
-use crate::input::InputManager;
-use crate::vision::VisionEngine;
+use crate::traits::*;
+
+pub mod lsp_transport;
 
 pub struct UltraWinHandler {
-    pub capture_engine: Option<Arc<CaptureEngine>>,
-    pub uia_bridge: Option<Arc<UIAutomationBridge>>,
-    pub input_manager: InputManager,
-    pub vision_engine: Option<Arc<VisionEngine>>,
+    pub capture_engine: Option<Arc<dyn CaptureProvider>>,
+    pub uia_bridge: Option<Arc<dyn UIAutomationProvider>>,
+    pub input_manager: Arc<dyn InputProvider>,
+    pub vision_engine: Option<Arc<dyn VisionProvider>>,
+    pub cdp_bridge: Arc<dyn BrowserProvider>,
 }
 
 #[async_trait]
@@ -99,6 +99,17 @@ impl ServerHandler for UltraWinHandler {
                             "name": "read_text",
                             "description": "Perform hardware-accelerated OCR on the current screen",
                             "inputSchema": { "type": "object", "properties": {} }
+                        },
+                        {
+                            "name": "web_query",
+                            "description": "Query the browser DOM using a CSS selector (requires --remote-debugging-port=9222)",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "selector": { "type": "string", "description": "CSS Selector" }
+                                },
+                                "required": ["selector"]
+                            }
                         }
                     ]
                 }))
@@ -113,10 +124,13 @@ impl ServerHandler for UltraWinHandler {
                     "screenshot" => {
                         let engine = self.capture_engine.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "Capture engine not available"))?;
                         let frame = engine.capture_frame().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Capture failed: {}", e)))?;
+                        
                         let mut buffer = Vec::new();
                         frame.write_to(&mut Cursor::new(&mut buffer), ImageFormat::Png)
                             .map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Encoding failed: {}", e)))?;
+                        
                         let b64 = general_purpose::STANDARD.encode(buffer);
+                        
                         Ok(json!({
                             "content": [
                                 { "type": "text", "text": "Screenshot captured successfully." },
@@ -128,8 +142,12 @@ impl ServerHandler for UltraWinHandler {
                         let x = arguments.get("x").and_then(|v| v.as_i64()).ok_or_else(|| Error::protocol(ErrorCode::InvalidParams, "Missing x"))? as i32;
                         let y = arguments.get("y").and_then(|v| v.as_i64()).ok_or_else(|| Error::protocol(ErrorCode::InvalidParams, "Missing y"))? as i32;
                         let button = arguments.get("button").and_then(|v| v.as_str()).unwrap_or("left");
+
                         self.input_manager.mouse_click(x, y, button).map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Click failed: {}", e)))?;
-                        Ok(json!({ "content": [{ "type": "text", "text": format!("Clicked {} at ({}, {})", button, x, y) }] }))
+
+                        Ok(json!({
+                            "content": [{ "type": "text", "text": format!("Clicked {} at ({}, {})", button, x, y) }]
+                        }))
                     }
                     "type_text" => {
                         let text = arguments.get("text").and_then(|v| v.as_str()).ok_or_else(|| Error::protocol(ErrorCode::InvalidParams, "Missing text"))?;
@@ -138,14 +156,12 @@ impl ServerHandler for UltraWinHandler {
                     }
                     "get_ui_tree" => {
                         let uia = self.uia_bridge.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "UIA bridge not available"))?;
-                        let root = uia.get_root().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Failed to get root: {}", e)))?;
-                        let tree = uia.traverse_tree(&root, 0);
+                        let tree = uia.get_root_json().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Failed to get tree: {}", e)))?;
                         Ok(json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(&tree).unwrap_or_default() }] }))
                     }
                     "get_focused_element" => {
                         let uia = self.uia_bridge.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "UIA bridge not available"))?;
-                        let element = uia.get_focused_element().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Failed to get focused element: {}", e)))?;
-                        let props = uia.traverse_tree(&element, 5);
+                        let props = uia.get_focused_json().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Failed to get focus: {}", e)))?;
                         Ok(json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(&props).unwrap_or_default() }] }))
                     }
                     "find_element" => {
@@ -161,8 +177,14 @@ impl ServerHandler for UltraWinHandler {
                         let vision = self.vision_engine.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "Vision engine not available"))?;
                         let engine = self.capture_engine.as_ref().ok_or_else(|| Error::protocol(ErrorCode::InternalError, "Capture engine not available"))?;
                         let frame = engine.capture_frame().map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Capture failed: {}", e)))?;
-                        let words = vision.recognize_text(&frame).map_err(|e| Error::protocol(ErrorCode::InternalError, format!("OCR failed: {}", e)))?;
+                        let words = vision.recognize_text(&frame).await.map_err(|e| Error::protocol(ErrorCode::InternalError, format!("OCR failed: {}", e)))?;
                         Ok(json!({ "content": [{ "type": "text", "text": format!("Detected words: {:?}", words) }] }))
+                    }
+                    "web_query" => {
+                        let selector = arguments.get("selector").and_then(|v| v.as_str()).ok_or_else(|| Error::protocol(ErrorCode::InvalidParams, "Missing selector"))?;
+                        self.cdp_bridge.ensure_ready().await.map_err(|e| Error::protocol(ErrorCode::InternalError, format!("Browser launch failed: {}", e)))?;
+                        let model = self.cdp_bridge.query_selector(selector).await.map_err(|e| Error::protocol(ErrorCode::InternalError, format!("CDP failed: {}", e)))?;
+                        Ok(json!({ "content": [{ "type": "text", "text": format!("Web element model: {:?}", model) }] }))
                     }
                     _ => Err(Error::protocol(ErrorCode::MethodNotFound, format!("Unknown tool: {}", name))),
                 }
@@ -174,15 +196,105 @@ impl ServerHandler for UltraWinHandler {
 
 pub fn build_server(
     transport: Arc<dyn mcp_sdk_rs::transport::Transport>,
-    capture: Option<Arc<CaptureEngine>>,
-    uia: Option<Arc<UIAutomationBridge>>,
-    vision: Option<Arc<VisionEngine>>,
+    capture: Option<Arc<dyn CaptureProvider>>,
+    uia: Option<Arc<dyn UIAutomationProvider>>,
+    vision: Option<Arc<dyn VisionProvider>>,
+    input: Arc<dyn InputProvider>,
+    cdp: Arc<dyn BrowserProvider>,
 ) -> Server {
     let handler = Arc::new(UltraWinHandler {
         capture_engine: capture,
         uia_bridge: uia,
-        input_manager: InputManager::new(),
+        input_manager: input,
         vision_engine: vision,
+        cdp_bridge: cdp,
     });
     Server::new(transport, handler)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::DynamicImage;
+    use crate::vision::engine::DetectedWord;
+    use windows::Win32::Foundation::RECT;
+
+    pub struct MockCapture;
+    impl CaptureProvider for MockCapture {
+        fn capture_frame(&self) -> anyhow::Result<DynamicImage> {
+            Ok(DynamicImage::new_rgba8(1, 1))
+        }
+    }
+
+    pub struct MockUIA;
+    impl UIAutomationProvider for MockUIA {
+        fn get_root_json(&self) -> anyhow::Result<Value> { Ok(json!({"name": "Root"})) }
+        fn get_focused_json(&self) -> anyhow::Result<Value> { Ok(json!({"name": "Focus"})) }
+        fn find_element(&self, _query: &str) -> anyhow::Result<Option<RECT>> { 
+            Ok(Some(RECT { left: 10, top: 10, right: 100, bottom: 100 })) 
+        }
+    }
+
+    pub struct MockInput;
+    impl InputProvider for MockInput {
+        fn mouse_click(&self, _x: i32, _y: i32, _button: &str) -> anyhow::Result<()> { Ok(()) }
+        fn type_text(&self, _text: &str) -> anyhow::Result<()> { Ok(()) }
+    }
+
+    pub struct MockVision;
+    #[async_trait]
+    impl VisionProvider for MockVision {
+        async fn recognize_text(&self, _image: &DynamicImage) -> anyhow::Result<Vec<DetectedWord>> {
+            Ok(vec![DetectedWord { text: "Mock".to_string(), x: 0, y: 0, width: 10, height: 10 }])
+        }
+    }
+
+    pub struct MockBrowser;
+    #[async_trait]
+    impl BrowserProvider for MockBrowser {
+        async fn query_selector(&self, _selector: &str) -> anyhow::Result<Value> { Ok(json!({"x": 50})) }
+        async fn ensure_ready(&self) -> anyhow::Result<()> { Ok(()) }
+    }
+
+    fn create_handler() -> UltraWinHandler {
+        UltraWinHandler {
+            capture_engine: Some(Arc::new(MockCapture)),
+            uia_bridge: Some(Arc::new(MockUIA)),
+            input_manager: Arc::new(MockInput),
+            vision_engine: Some(Arc::new(MockVision)),
+            cdp_bridge: Arc::new(MockBrowser),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tools_exhaustive() {
+        let handler = create_handler();
+        
+        let res = handler.handle_method("tools/list", None).await.unwrap();
+        assert!(res.get("tools").is_some());
+
+        let res = handler.handle_method("tools/call", Some(json!({"name": "screenshot"}))).await.unwrap();
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("successfully"));
+
+        let res = handler.handle_method("tools/call", Some(json!({"name": "click", "arguments": {"x": 1, "y": 1}}))).await.unwrap();
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("Clicked"));
+
+        let res = handler.handle_method("tools/call", Some(json!({"name": "type_text", "arguments": {"text": "hi"}}))).await.unwrap();
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("Typed"));
+
+        let res = handler.handle_method("tools/call", Some(json!({"name": "get_ui_tree"}))).await.unwrap();
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("Root"));
+
+        let res = handler.handle_method("tools/call", Some(json!({"name": "get_focused_element"}))).await.unwrap();
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("Focus"));
+
+        let res = handler.handle_method("tools/call", Some(json!({"name": "find_element", "arguments": {"query": "test"}}))).await.unwrap();
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("Found"));
+
+        let res = handler.handle_method("tools/call", Some(json!({"name": "read_text"}))).await.unwrap();
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("Detected"));
+
+        let res = handler.handle_method("tools/call", Some(json!({"name": "web_query", "arguments": {"selector": "a"}}))).await.unwrap();
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("Web element model"));
+    }
 }

@@ -1,1 +1,10 @@
 /target
+/target
+
+skill-dist/
+ultrawin-mcp-skill/
+lcov.info
+scripts/__pycache__/
+tests/data/
+*.pyc
+*.log

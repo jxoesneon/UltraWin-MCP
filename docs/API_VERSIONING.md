@@ -131,7 +131,7 @@ server.addTool({
 
 ## Version Changelog
 
-### v1.0.0 (2026-06-02)
+### v0.1.0 (2026-06-02)
 
 **Initial Release (UltraWin port)**
 

@@ -1,0 +1,25 @@
+name: Lint Filenames
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for Windows-reserved characters
+        run: |
+          # Find files with reserved characters: < > : " | ? *
+          # Exclude .git directory
+          INVALID_FILES=$(find . -type f -name "*[:*?\"<>|]*" -not -path '*/.*')
+          if [ -n "$INVALID_FILES" ]; then
+            echo "Found files with Windows-reserved characters:"
+            echo "$INVALID_FILES"
+            exit 1
+          else
+            echo "No files with Windows-reserved characters found."
+          fi

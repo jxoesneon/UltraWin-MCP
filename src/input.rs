@@ -1,139 +1,91 @@
-﻿use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_KEYUP,
-    KEYEVENTF_UNICODE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
-    MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN,
-    MOUSEEVENTF_RIGHTUP, MOUSEINPUT, VIRTUAL_KEY,
-};
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
-use std::mem::size_of;
+use anyhow::Result;
+use crate::traits::InputProvider;
 
-pub struct InputManager;
+pub struct InputManager {}
 
 impl InputManager {
-    pub fn new() -> Self {
-        Self
-    }
+    pub fn new() -> Self { Self {} }
+}
 
-    fn get_screen_metrics(&self) -> (i32, i32) {
+impl InputProvider for InputManager {
+    
+    fn mouse_click(&self, x: i32, y: i32, button: &str) -> Result<()> {
         unsafe {
-            (
-                GetSystemMetrics(SM_CXSCREEN),
-                GetSystemMetrics(SM_CYSCREEN),
-            )
+            let width = GetSystemMetrics(SM_CXSCREEN);
+            let height = GetSystemMetrics(SM_CYSCREEN);
+            let inputs = generate_mouse_click_inputs(x, y, button, width, height);
+            SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+            Ok(())
         }
     }
 
-    pub fn mouse_move(&self, x: i32, y: i32) -> anyhow::Result<()> {
-        let (width, height) = self.get_screen_metrics();
-        
-        // Normalize coordinates to [0, 65535] for MOUSEEVENTF_ABSOLUTE
-        let dx = (x * 65536) / width;
-        let dy = (y * 65536) / height;
-
-        let input = INPUT {
-            r#type: INPUT_MOUSE,
-            Anonymous: INPUT_0 {
-                mi: MOUSEINPUT {
-                    dx,
-                    dy,
-                    mouseData: 0,
-                    dwFlags: MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE,
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        };
-
+    
+    fn type_text(&self, text: &str) -> Result<()> {
         unsafe {
-            SendInput(&[input], size_of::<INPUT>() as i32);
-        }
-        Ok(())
-    }
-
-    pub fn mouse_click(&self, x: i32, y: i32, button: &str) -> anyhow::Result<()> {
-        self.mouse_move(x, y)?;
-
-        let (width, height) = self.get_screen_metrics();
-        let dx = (x * 65536) / width;
-        let dy = (y * 65536) / height;
-
-        let (down_flag, up_flag) = match button {
-            "left" => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
-            "right" => (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
-            "middle" => (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP),
-            _ => anyhow::bail!("Invalid mouse button: {}", button),
-        };
-
-        let inputs = [
-            INPUT {
-                r#type: INPUT_MOUSE,
-                Anonymous: INPUT_0 {
-                    mi: MOUSEINPUT {
-                        dx,
-                        dy,
-                        mouseData: 0,
-                        dwFlags: down_flag | MOUSEEVENTF_ABSOLUTE,
-                        time: 0,
-                        dwExtraInfo: 0,
-                    },
-                },
-            },
-            INPUT {
-                r#type: INPUT_MOUSE,
-                Anonymous: INPUT_0 {
-                    mi: MOUSEINPUT {
-                        dx,
-                        dy,
-                        mouseData: 0,
-                        dwFlags: up_flag | MOUSEEVENTF_ABSOLUTE,
-                        time: 0,
-                        dwExtraInfo: 0,
-                    },
-                },
-            },
-        ];
-
-        unsafe {
-            SendInput(&inputs, size_of::<INPUT>() as i32);
-        }
-        Ok(())
-    }
-
-    pub fn type_text(&self, text: &str) -> anyhow::Result<()> {
-        for c in text.encode_utf16() {
-            let inputs = [
-                INPUT {
-                    r#type: INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VIRTUAL_KEY(0),
-                            wScan: c,
-                            dwFlags: KEYEVENTF_UNICODE,
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-                INPUT {
-                    r#type: INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: VIRTUAL_KEY(0),
-                            wScan: c,
-                            dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
-                            time: 0,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                },
-            ];
-
-            unsafe {
-                SendInput(&inputs, size_of::<INPUT>() as i32);
+            for c in text.chars() {
+                let inputs = generate_key_inputs(c);
+                SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
             }
+            Ok(())
         }
-        Ok(())
     }
+}
+
+pub fn generate_mouse_click_inputs(x: i32, y: i32, button: &str, width: i32, height: i32) -> [INPUT; 3] {
+    let normalized_x = if width > 0 { (x * 65535) / width } else { 0 };
+    let normalized_y = if height > 0 { (y * 65535) / height } else { 0 };
+
+    let mut inputs = [INPUT::default(); 3];
+    
+    inputs[0].r#type = INPUT_MOUSE;
+    inputs[0].Anonymous.mi = MOUSEINPUT {
+        dx: normalized_x,
+        dy: normalized_y,
+        dwFlags: MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE,
+        ..Default::default()
+    };
+
+    let (down, up) = match button {
+        "right" => (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
+        "middle" => (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP),
+        _ => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
+    };
+
+    inputs[1].r#type = INPUT_MOUSE;
+    inputs[1].Anonymous.mi = MOUSEINPUT {
+        dwFlags: MOUSEEVENTF_ABSOLUTE | down,
+        ..Default::default()
+    };
+
+    inputs[2].r#type = INPUT_MOUSE;
+    inputs[2].Anonymous.mi = MOUSEINPUT {
+        dwFlags: MOUSEEVENTF_ABSOLUTE | up,
+        ..Default::default()
+    };
+
+    inputs
+}
+
+pub fn generate_key_inputs(c: char) -> [INPUT; 2] {
+    let mut inputs = [INPUT::default(); 2];
+    
+    inputs[0].r#type = INPUT_KEYBOARD;
+    inputs[0].Anonymous.ki = KEYBDINPUT {
+        wScan: c as u16,
+        dwFlags: KEYEVENTF_UNICODE,
+        ..Default::default()
+    };
+
+    inputs[1].r#type = INPUT_KEYBOARD;
+    inputs[1].Anonymous.ki = KEYBDINPUT {
+        wScan: c as u16,
+        dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+        ..Default::default()
+    };
+
+    inputs
 }
 
 #[cfg(test)]
@@ -141,24 +93,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_screen_metrics() {
-        let manager = InputManager::new();
-        let (w, h) = manager.get_screen_metrics();
-        println!("Screen metrics: {}x{}", w, h);
-        // In CI, metrics might be 0 or some default value, but shouldnt crash
-    }
-
-    #[test]
-    fn test_input_generation() {
-        let manager = InputManager::new();
-        let result = manager.mouse_move(100, 100);
-        assert!(result.is_ok());
+    fn test_input_logic() {
+        let inputs = generate_mouse_click_inputs(10, 10, "left", 100, 100);
+        assert_eq!(inputs.len(), 3);
+        
+        let keys = generate_key_inputs('a');
+        assert_eq!(keys.len(), 2);
     }
 }
 
-    #[test]
-    fn test_type_text_init() {
-        let manager = InputManager::new();
-        let result = manager.type_text("Hello");
-        assert!(result.is_ok());
-    }
+
+
+
+
+
