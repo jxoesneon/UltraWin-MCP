@@ -1,3 +1,11 @@
+#![allow(
+    unknown_lints,
+    clippy::unknown_lints,
+    clippy::chunks_exact_to_as_chunks,
+    clippy::double_must_use,
+    clippy::collapsible_if
+)]
+
 mod capture;
 mod input;
 mod server;
