@@ -114,13 +114,25 @@ mod tests {
 
             let inputs_right = generate_mouse_click_inputs(50, 60, "right", 100, 100);
             assert_eq!(inputs_right.len(), 3);
-            assert_eq!(inputs_right[1].Anonymous.mi.dwFlags, MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_RIGHTDOWN);
-            assert_eq!(inputs_right[2].Anonymous.mi.dwFlags, MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_RIGHTUP);
+            assert_eq!(
+                inputs_right[1].Anonymous.mi.dwFlags,
+                MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_RIGHTDOWN
+            );
+            assert_eq!(
+                inputs_right[2].Anonymous.mi.dwFlags,
+                MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_RIGHTUP
+            );
 
             let inputs_middle = generate_mouse_click_inputs(0, 0, "middle", 100, 100);
             assert_eq!(inputs_middle.len(), 3);
-            assert_eq!(inputs_middle[1].Anonymous.mi.dwFlags, MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MIDDLEDOWN);
-            assert_eq!(inputs_middle[2].Anonymous.mi.dwFlags, MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MIDDLEUP);
+            assert_eq!(
+                inputs_middle[1].Anonymous.mi.dwFlags,
+                MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MIDDLEDOWN
+            );
+            assert_eq!(
+                inputs_middle[2].Anonymous.mi.dwFlags,
+                MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MIDDLEUP
+            );
 
             let inputs_zero = generate_mouse_click_inputs(10, 10, "left", 0, 0);
             assert_eq!(inputs_zero[0].Anonymous.mi.dx, 0);
@@ -130,7 +142,10 @@ mod tests {
             assert_eq!(keys.len(), 2);
             assert_eq!(keys[0].Anonymous.ki.wScan, 'a' as u16);
             assert_eq!(keys[0].Anonymous.ki.dwFlags, KEYEVENTF_UNICODE);
-            assert_eq!(keys[1].Anonymous.ki.dwFlags, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
+            assert_eq!(
+                keys[1].Anonymous.ki.dwFlags,
+                KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+            );
 
             let manager = InputManager::default();
             let _ = manager.mouse_click(0, 0, "left");

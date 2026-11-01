@@ -524,7 +524,10 @@ mod tests {
         };
 
         // Missing params
-        let err = empty_handler.handle_method("tools/call", None).await.unwrap_err();
+        let err = empty_handler
+            .handle_method("tools/call", None)
+            .await
+            .unwrap_err();
         match err {
             Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InvalidParams),
             _ => panic!("Expected InvalidParams"),
@@ -551,7 +554,10 @@ mod tests {
         }
 
         // Unknown method
-        let err = empty_handler.handle_method("unknown_method", None).await.unwrap_err();
+        let err = empty_handler
+            .handle_method("unknown_method", None)
+            .await
+            .unwrap_err();
         match err {
             Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::MethodNotFound),
             _ => panic!("Expected MethodNotFound"),
@@ -572,7 +578,10 @@ mod tests {
 
         // Click with missing x or y
         let err = empty_handler
-            .handle_method("tools/call", Some(json!({"name": "click", "arguments": {"x": 10}})))
+            .handle_method(
+                "tools/call",
+                Some(json!({"name": "click", "arguments": {"x": 10}})),
+            )
             .await
             .unwrap_err();
         match err {
@@ -580,7 +589,10 @@ mod tests {
             _ => panic!("Expected InvalidParams"),
         }
         let err = empty_handler
-            .handle_method("tools/call", Some(json!({"name": "click", "arguments": {"y": 10}})))
+            .handle_method(
+                "tools/call",
+                Some(json!({"name": "click", "arguments": {"y": 10}})),
+            )
             .await
             .unwrap_err();
         match err {
@@ -590,7 +602,10 @@ mod tests {
 
         // Type text with missing text
         let err = empty_handler
-            .handle_method("tools/call", Some(json!({"name": "type_text", "arguments": {}})))
+            .handle_method(
+                "tools/call",
+                Some(json!({"name": "type_text", "arguments": {}})),
+            )
             .await
             .unwrap_err();
         match err {
@@ -619,7 +634,10 @@ mod tests {
             _ => panic!("Expected InternalError"),
         }
         let err = empty_handler
-            .handle_method("tools/call", Some(json!({"name": "find_element", "arguments": {"query": "test"}})))
+            .handle_method(
+                "tools/call",
+                Some(json!({"name": "find_element", "arguments": {"query": "test"}})),
+            )
             .await
             .unwrap_err();
         match err {
@@ -627,7 +645,10 @@ mod tests {
             _ => panic!("Expected InternalError"),
         }
         let err = empty_handler
-            .handle_method("tools/call", Some(json!({"name": "find_element", "arguments": {}})))
+            .handle_method(
+                "tools/call",
+                Some(json!({"name": "find_element", "arguments": {}})),
+            )
             .await
             .unwrap_err();
         match err {
@@ -650,7 +671,10 @@ mod tests {
 
         // web_query with missing selector
         let err = empty_handler
-            .handle_method("tools/call", Some(json!({"name": "web_query", "arguments": {}})))
+            .handle_method(
+                "tools/call",
+                Some(json!({"name": "web_query", "arguments": {}})),
+            )
             .await
             .unwrap_err();
         match err {
@@ -663,13 +687,19 @@ mod tests {
             name: "test".to_string(),
             version: "1.0.0".to_string(),
         };
-        let caps = empty_handler.initialize(impl_info, Default::default()).await.unwrap();
+        let caps = empty_handler
+            .initialize(impl_info, Default::default())
+            .await
+            .unwrap();
         assert!(caps.tools.is_none());
         assert!(empty_handler.shutdown().await.is_ok());
 
         // build_server test
         let (server_read, server_write) = tokio::io::duplex(1024);
-        let transport = Arc::new(stdio_transport::StdioTransport::new(server_read, server_write));
+        let transport = Arc::new(stdio_transport::StdioTransport::new(
+            server_read,
+            server_write,
+        ));
         let _server = build_server(
             transport,
             None,

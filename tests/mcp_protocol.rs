@@ -244,7 +244,10 @@ async fn test_full_mcp_session_e2e() {
             "capabilities": {}
         }
     });
-    writer.write_all(format!("{}\n", init_req).as_bytes()).await.unwrap();
+    writer
+        .write_all(format!("{}\n", init_req).as_bytes())
+        .await
+        .unwrap();
     writer.flush().await.unwrap();
 
     let mut line = String::new();
@@ -260,7 +263,10 @@ async fn test_full_mcp_session_e2e() {
         "method": "notifications/initialized",
         "params": {}
     });
-    writer.write_all(format!("{}\n", notif).as_bytes()).await.unwrap();
+    writer
+        .write_all(format!("{}\n", notif).as_bytes())
+        .await
+        .unwrap();
     writer.flush().await.unwrap();
 
     // 3. Send tools/list
@@ -270,7 +276,10 @@ async fn test_full_mcp_session_e2e() {
         "method": "tools/list",
         "params": {}
     });
-    writer.write_all(format!("{}\n", list_req).as_bytes()).await.unwrap();
+    writer
+        .write_all(format!("{}\n", list_req).as_bytes())
+        .await
+        .unwrap();
     writer.flush().await.unwrap();
 
     line.clear();
@@ -290,14 +299,22 @@ async fn test_full_mcp_session_e2e() {
             "arguments": { "x": 100, "y": 200, "button": "left" }
         }
     });
-    writer.write_all(format!("{}\n", call_req).as_bytes()).await.unwrap();
+    writer
+        .write_all(format!("{}\n", call_req).as_bytes())
+        .await
+        .unwrap();
     writer.flush().await.unwrap();
 
     line.clear();
     reader.read_line(&mut line).await.unwrap();
     let call_resp: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(call_resp["id"], 3);
-    assert!(call_resp["result"]["content"][0]["text"].as_str().unwrap().contains("Clicked"));
+    assert!(
+        call_resp["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Clicked")
+    );
 
     // 5. Call type_text tool
     let type_req = serde_json::json!({
@@ -309,14 +326,22 @@ async fn test_full_mcp_session_e2e() {
             "arguments": { "text": "UltraWin Live" }
         }
     });
-    writer.write_all(format!("{}\n", type_req).as_bytes()).await.unwrap();
+    writer
+        .write_all(format!("{}\n", type_req).as_bytes())
+        .await
+        .unwrap();
     writer.flush().await.unwrap();
 
     line.clear();
     reader.read_line(&mut line).await.unwrap();
     let type_resp: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(type_resp["id"], 4);
-    assert!(type_resp["result"]["content"][0]["text"].as_str().unwrap().contains("Typed: UltraWin Live"));
+    assert!(
+        type_resp["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Typed: UltraWin Live")
+    );
 
     // Clean up
     drop(writer);

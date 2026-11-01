@@ -1,10 +1,12 @@
-use mcp_sdk_rs::error::Error;
-use mcp_sdk_rs::transport::{Message, Transport};
 use async_trait::async_trait;
 use futures_util::stream::{self, Stream};
+use mcp_sdk_rs::error::Error;
+use mcp_sdk_rs::transport::{Message, Transport};
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::io::{self, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{
+    self, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
+};
 use tokio::sync::mpsc;
 use tracing::error;
 
@@ -37,7 +39,7 @@ impl StdioTransport {
                 let mut line = String::new();
                 match reader.read_line(&mut line).await {
                     Ok(0) => break, // EOF
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         error!("Stdio Transport: Failed to read from stdin: {}", e);
                         break;
@@ -78,6 +80,7 @@ impl StdioTransport {
                 // Normalize incoming messages:
                 // 1. Standard MCP client sends "params.clientInfo" instead of "params.implementation"
                 // 2. Standard MCP client sends "notifications/initialized" instead of "initialized"
+                #[allow(clippy::collapsible_if)]
                 let normalized_val = match serde_json::from_str::<serde_json::Value>(&body_str) {
                     Ok(mut val) => {
                         if let Some(method_val) = val.get_mut("method") {
@@ -87,15 +90,20 @@ impl StdioTransport {
                         }
 
                         if val.get("method").and_then(|m| m.as_str()) == Some("initialize") {
-                            if let Some(params) = val.get_mut("params").and_then(|p| p.as_object_mut()) {
+                            if let Some(params) =
+                                val.get_mut("params").and_then(|p| p.as_object_mut())
+                            {
                                 if !params.contains_key("implementation") {
                                     if let Some(client_info) = params.get("clientInfo").cloned() {
                                         params.insert("implementation".to_string(), client_info);
                                     } else {
-                                        params.insert("implementation".to_string(), serde_json::json!({
-                                            "name": "unknown-client",
-                                            "version": "1.0.0"
-                                        }));
+                                        params.insert(
+                                            "implementation".to_string(),
+                                            serde_json::json!({
+                                                "name": "unknown-client",
+                                                "version": "1.0.0"
+                                            }),
+                                        );
                                     }
                                 }
                             }
@@ -135,18 +143,27 @@ impl StdioTransport {
 
                 if let Some(result) = msg_val.get_mut("result").and_then(|r| r.as_object_mut()) {
                     if !result.contains_key("protocolVersion") {
-                        result.insert("protocolVersion".to_string(), serde_json::json!("2024-11-05"));
+                        result.insert(
+                            "protocolVersion".to_string(),
+                            serde_json::json!("2024-11-05"),
+                        );
                     }
                     if !result.contains_key("serverInfo") {
-                        result.insert("serverInfo".to_string(), serde_json::json!({
-                            "name": "ultrawin-mcp",
-                            "version": env!("CARGO_PKG_VERSION")
-                        }));
+                        result.insert(
+                            "serverInfo".to_string(),
+                            serde_json::json!({
+                                "name": "ultrawin-mcp",
+                                "version": env!("CARGO_PKG_VERSION")
+                            }),
+                        );
                     }
                     if !result.contains_key("capabilities") {
-                        result.insert("capabilities".to_string(), serde_json::json!({
-                            "tools": {}
-                        }));
+                        result.insert(
+                            "capabilities".to_string(),
+                            serde_json::json!({
+                                "tools": {}
+                            }),
+                        );
                     }
                 }
 
@@ -229,7 +246,10 @@ mod tests {
             _ => panic!("Expected Request"),
         }
 
-        let resp = Response::success(RequestId::Number(1), Some(serde_json::json!({"pong": true})));
+        let resp = Response::success(
+            RequestId::Number(1),
+            Some(serde_json::json!({"pong": true})),
+        );
         transport.send(Message::Response(resp)).await.unwrap();
 
         let mut line = String::new();
@@ -265,7 +285,8 @@ mod tests {
                 },
                 "capabilities": {}
             }
-        }).to_string();
+        })
+        .to_string();
 
         let framed = format!("Content-Length: {}\r\n\r\n{}", init_body.len(), init_body);
         client_writer.write_all(framed.as_bytes()).await.unwrap();
@@ -275,9 +296,13 @@ mod tests {
             "jsonrpc": "2.0",
             "method": "notifications/initialized",
             "params": {}
-        }).to_string();
+        })
+        .to_string();
         let framed_notif = format!("Content-Length: {}\r\n\r\n{}", notif_body.len(), notif_body);
-        client_writer.write_all(framed_notif.as_bytes()).await.unwrap();
+        client_writer
+            .write_all(framed_notif.as_bytes())
+            .await
+            .unwrap();
 
         // 3. Newline initialize without clientInfo fallback
         let init_body_no_info = serde_json::json!({
@@ -288,11 +313,18 @@ mod tests {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {}
             }
-        }).to_string();
-        client_writer.write_all(format!("\n{}\n", init_body_no_info).as_bytes()).await.unwrap();
+        })
+        .to_string();
+        client_writer
+            .write_all(format!("\n{}\n", init_body_no_info).as_bytes())
+            .await
+            .unwrap();
 
         // 4. Invalid JSON
-        client_writer.write_all(b"not a valid json\n").await.unwrap();
+        client_writer
+            .write_all(b"not a valid json\n")
+            .await
+            .unwrap();
         client_writer.flush().await.unwrap();
 
         // Check msg 1: initialize
