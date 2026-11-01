@@ -10,6 +10,7 @@ use tokio::io::{
 use tokio::sync::mpsc;
 use tracing::error;
 
+#[allow(dead_code)]
 pub struct LspTransport {
     read_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<Result<Message, Error>>>>,
     write_tx: mpsc::Sender<Message>,
@@ -21,6 +22,7 @@ impl Default for LspTransport {
     }
 }
 
+#[allow(dead_code)]
 impl LspTransport {
     pub fn new<R, W>(reader: R, writer: W) -> Self
     where

@@ -83,3 +83,15 @@ impl BrowserProvider for CdpBridge {
         Err(anyhow!("CDP Query failed or timed out"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cdp_bridge_new() {
+        let bridge = CdpBridge::new("127.0.0.1", 9222);
+        assert_eq!(bridge.host, "127.0.0.1");
+        assert_eq!(bridge.port, 9222);
+    }
+}

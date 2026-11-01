@@ -11,6 +11,7 @@ use std::sync::Arc;
 use crate::traits::*;
 
 pub mod lsp_transport;
+pub mod stdio_transport;
 
 pub struct UltraWinHandler {
     pub capture_engine: Option<Arc<dyn CaptureProvider>>,
@@ -508,6 +509,174 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("Web element model")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_server_error_and_edge_cases() {
+        // Test handler with None providers
+        let empty_handler = UltraWinHandler {
+            capture_engine: None,
+            uia_bridge: None,
+            input_manager: Arc::new(MockInput),
+            vision_engine: None,
+            cdp_bridge: Arc::new(MockBrowser),
+        };
+
+        // Missing params
+        let err = empty_handler.handle_method("tools/call", None).await.unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InvalidParams),
+            _ => panic!("Expected InvalidParams"),
+        }
+
+        // Missing tool name
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"arguments": {}})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InvalidParams),
+            _ => panic!("Expected InvalidParams"),
+        }
+
+        // Unknown tool
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "unknown_tool"})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::MethodNotFound),
+            _ => panic!("Expected MethodNotFound"),
+        }
+
+        // Unknown method
+        let err = empty_handler.handle_method("unknown_method", None).await.unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::MethodNotFound),
+            _ => panic!("Expected MethodNotFound"),
+        }
+
+        // Screenshot with None engine
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "screenshot"})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, message, .. } => {
+                assert_eq!(code, ErrorCode::InternalError);
+                assert!(message.contains("Capture engine not available"));
+            }
+            _ => panic!("Expected InternalError"),
+        }
+
+        // Click with missing x or y
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "click", "arguments": {"x": 10}})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InvalidParams),
+            _ => panic!("Expected InvalidParams"),
+        }
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "click", "arguments": {"y": 10}})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InvalidParams),
+            _ => panic!("Expected InvalidParams"),
+        }
+
+        // Type text with missing text
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "type_text", "arguments": {}})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InvalidParams),
+            _ => panic!("Expected InvalidParams"),
+        }
+
+        // UIA tools with None uia_bridge
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "get_ui_tree"})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, message, .. } => {
+                assert_eq!(code, ErrorCode::InternalError);
+                assert!(message.contains("UIA bridge not available"));
+            }
+            _ => panic!("Expected InternalError"),
+        }
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "get_focused_element"})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InternalError),
+            _ => panic!("Expected InternalError"),
+        }
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "find_element", "arguments": {"query": "test"}})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InternalError),
+            _ => panic!("Expected InternalError"),
+        }
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "find_element", "arguments": {}})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InvalidParams),
+            _ => panic!("Expected InvalidParams"),
+        }
+
+        // read_text with None vision or capture engine
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "read_text"})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, message, .. } => {
+                assert_eq!(code, ErrorCode::InternalError);
+                assert!(message.contains("Vision engine not available"));
+            }
+            _ => panic!("Expected InternalError"),
+        }
+
+        // web_query with missing selector
+        let err = empty_handler
+            .handle_method("tools/call", Some(json!({"name": "web_query", "arguments": {}})))
+            .await
+            .unwrap_err();
+        match err {
+            Error::Protocol { code, .. } => assert_eq!(code, ErrorCode::InvalidParams),
+            _ => panic!("Expected InvalidParams"),
+        }
+
+        // Server initialize and shutdown
+        let impl_info = Implementation {
+            name: "test".to_string(),
+            version: "1.0.0".to_string(),
+        };
+        let caps = empty_handler.initialize(impl_info, Default::default()).await.unwrap();
+        assert!(caps.tools.is_none());
+        assert!(empty_handler.shutdown().await.is_ok());
+
+        // build_server test
+        let (server_read, server_write) = tokio::io::duplex(1024);
+        let transport = Arc::new(stdio_transport::StdioTransport::new(server_read, server_write));
+        let _server = build_server(
+            transport,
+            None,
+            None,
+            None,
+            Arc::new(MockInput),
+            Arc::new(MockBrowser),
         );
     }
 }

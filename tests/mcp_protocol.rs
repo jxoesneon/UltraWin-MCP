@@ -201,3 +201,124 @@ async fn test_error_cases() {
         _ => panic!("Expected Protocol MethodNotFound error"),
     }
 }
+
+#[tokio::test]
+async fn test_full_mcp_session_e2e() {
+    let (client_write, server_read) = tokio::io::duplex(8192);
+    let (server_write, client_read) = tokio::io::duplex(8192);
+
+    let transport = Arc::new(ultrawin_mcp::server::stdio_transport::StdioTransport::new(
+        server_read,
+        server_write,
+    ));
+
+    let server = ultrawin_mcp::server::build_server(
+        transport,
+        Some(Arc::new(MockCapture)),
+        Some(Arc::new(MockUIA)),
+        Some(Arc::new(MockVision)),
+        Arc::new(MockInput),
+        Arc::new(MockBrowser),
+    );
+
+    // Spawn server in background
+    let server_task = tokio::spawn(async move {
+        let _ = server.start().await;
+    });
+
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let mut reader = BufReader::new(client_read);
+    let mut writer = client_write;
+
+    // 1. Send initialize
+    let init_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "clientInfo": {
+                "name": "e2e-client",
+                "version": "1.0.0"
+            },
+            "capabilities": {}
+        }
+    });
+    writer.write_all(format!("{}\n", init_req).as_bytes()).await.unwrap();
+    writer.flush().await.unwrap();
+
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    let init_resp: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(init_resp["id"], 1);
+    assert_eq!(init_resp["result"]["protocolVersion"], "2024-11-05");
+    assert_eq!(init_resp["result"]["serverInfo"]["name"], "ultrawin-mcp");
+
+    // 2. Send initialized notification
+    let notif = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized",
+        "params": {}
+    });
+    writer.write_all(format!("{}\n", notif).as_bytes()).await.unwrap();
+    writer.flush().await.unwrap();
+
+    // 3. Send tools/list
+    let list_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/list",
+        "params": {}
+    });
+    writer.write_all(format!("{}\n", list_req).as_bytes()).await.unwrap();
+    writer.flush().await.unwrap();
+
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    let list_resp: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(list_resp["id"], 2);
+    let tools = list_resp["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 8);
+
+    // 4. Call click tool
+    let call_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+            "name": "click",
+            "arguments": { "x": 100, "y": 200, "button": "left" }
+        }
+    });
+    writer.write_all(format!("{}\n", call_req).as_bytes()).await.unwrap();
+    writer.flush().await.unwrap();
+
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    let call_resp: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(call_resp["id"], 3);
+    assert!(call_resp["result"]["content"][0]["text"].as_str().unwrap().contains("Clicked"));
+
+    // 5. Call type_text tool
+    let type_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "tools/call",
+        "params": {
+            "name": "type_text",
+            "arguments": { "text": "UltraWin Live" }
+        }
+    });
+    writer.write_all(format!("{}\n", type_req).as_bytes()).await.unwrap();
+    writer.flush().await.unwrap();
+
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    let type_resp: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(type_resp["id"], 4);
+    assert!(type_resp["result"]["content"][0]["text"].as_str().unwrap().contains("Typed: UltraWin Live"));
+
+    // Clean up
+    drop(writer);
+    server_task.abort();
+}

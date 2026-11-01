@@ -150,3 +150,17 @@ impl UIAutomationBridge {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uia_bridge_live() {
+        if let Ok(bridge) = UIAutomationBridge::new() {
+            let _ = bridge.get_root_json();
+            let _ = bridge.get_focused_json();
+            let _ = bridge.find_element("non_existent_window_element_12345");
+        }
+    }
+}

@@ -273,4 +273,37 @@ mod tests {
         let img = process_gdi_buffer(buf, 1, 1).unwrap();
         assert_eq!(img.as_rgba8().unwrap().get_pixel(0, 0).0, [2, 1, 0, 3]);
     }
+
+    #[test]
+    fn test_convert_bgra_to_rgba() {
+        let bgra_data = vec![
+            10, 20, 30, 255, 40, 50, 60, 255, // row 0: 2 pixels (8 bytes)
+            0, 0, // pitch padding: 2 bytes, total pitch = 10 bytes
+            70, 80, 90, 255, 11, 22, 33, 255, // row 1: 2 pixels
+            0, 0, // pitch padding
+        ];
+
+        unsafe {
+            let img = convert_bgra_to_rgba(bgra_data.as_ptr(), 2, 2, 10).unwrap();
+            let rgba = img.as_rgba8().unwrap();
+            assert_eq!(rgba.get_pixel(0, 0).0, [30, 20, 10, 255]);
+            assert_eq!(rgba.get_pixel(1, 0).0, [60, 50, 40, 255]);
+            assert_eq!(rgba.get_pixel(0, 1).0, [90, 80, 70, 255]);
+            assert_eq!(rgba.get_pixel(1, 1).0, [33, 22, 11, 255]);
+
+            // Pitch out of bounds error
+            let err = convert_bgra_to_rgba(bgra_data.as_ptr(), 2, 2, 3);
+            assert!(err.is_err());
+        }
+    }
+
+    #[test]
+    fn test_capture_engine_instantiation() {
+        // Test instantiation logic
+        let engine = CaptureEngine::new(0);
+        if let Ok(ref eng) = engine {
+            // Attempt capture (falls back gracefully to GDI if DXGI fails in headless/non-desktop environment)
+            let _ = eng.capture_frame();
+        }
+    }
 }

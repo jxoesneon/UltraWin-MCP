@@ -70,3 +70,17 @@ impl VisionEngine {
         Ok(Self { engine })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_vision_engine_recognition() {
+        if let Ok(engine) = VisionEngine::new(None).await {
+            let img = DynamicImage::new_rgba8(100, 100);
+            let words = engine.recognize_text(&img).await;
+            assert!(words.is_ok());
+        }
+    }
+}

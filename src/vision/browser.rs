@@ -72,3 +72,18 @@ pub async fn ensure_browser_ready() -> Result<()> {
         "Browser launched but port 9222 is not responding after 5 seconds"
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_browser_check_or_launch() {
+        // Quick probe: if port 9222 is active, ensure_browser_ready completes immediately
+        let url = "http://127.0.0.1:9222/json/version";
+        if reqwest::get(url).await.is_ok() {
+            let res = ensure_browser_ready().await;
+            assert!(res.is_ok());
+        }
+    }
+}

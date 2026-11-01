@@ -7,7 +7,7 @@ mod vision;
 
 use crate::capture::CaptureEngine;
 use crate::input::InputManager;
-use crate::server::lsp_transport::LspTransport;
+use crate::server::stdio_transport::StdioTransport;
 use crate::uia::UIAutomationBridge;
 use crate::vision::VisionEngine;
 use crate::vision::cdp::CdpBridge;
@@ -17,11 +17,15 @@ use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    run_server().await
+}
+
+pub async fn run_server() -> anyhow::Result<()> {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .with_writer(std::io::stderr)
         .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    let _ = tracing::subscriber::set_global_default(subscriber);
 
     info!("UltraWin MCP - State-of-the-Art Windows Automation Server");
 
@@ -61,9 +65,9 @@ async fn main() -> anyhow::Result<()> {
     let input_manager = Arc::new(InputManager::new());
     let cdp_bridge = Arc::new(CdpBridge::new("127.0.0.1", 9222));
 
-    info!("Initializing MCP Server with LSP Transport...");
+    info!("Initializing MCP Server with Standard Stdio Transport...");
 
-    let transport = Arc::new(LspTransport::new(tokio::io::stdin(), tokio::io::stdout()));
+    let transport = Arc::new(StdioTransport::new(tokio::io::stdin(), tokio::io::stdout()));
     let server = server::build_server(
         transport,
         capture_engine.map(|e| e as Arc<dyn crate::traits::CaptureProvider>),
